@@ -22,11 +22,13 @@ __global__ void matrixMultiply(float * A, float * B, float * C,
 	// i is row index
 	int i = threadIdx.y + blockDim.y * blockIdx.y;
 	
-	float sum = 0;
-	for (int n = 0; n < numAColumns; n++) {
-		sum += A[i * numAColumns + n] * B[n * numBColumns + j];
+	if ((i < numCRows) && (j < numCColumns)) {
+		float sum = 0;
+		for (int n = 0; n < numAColumns; n++) {
+			sum += A[i * numAColumns + n] * B[n * numBColumns + j];
+		}
+		C[i * numCColumns + j] = sum;
 	}
-	C[i * numCColumns + j] = sum;
 }
 
 int main(int argc, char ** argv) {
