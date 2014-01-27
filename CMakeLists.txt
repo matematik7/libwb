@@ -6,6 +6,7 @@
 ############################################################################################
 project(libwb)
 cmake_minimum_required(VERSION 2.6 FATAL_ERROR)
+set(CMAKE_C_COMPILER "gcc-4.6")
 find_package(CUDA REQUIRED)
 # collect source files
 

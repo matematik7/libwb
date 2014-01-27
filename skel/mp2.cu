@@ -8,6 +8,9 @@
         }                                                  \
     } while(0)
 
+// compute matrix size in ram from dimensions
+#define MATRIX_SIZE(a,b) (a) * (b) * sizeof(float)
+
 // Compute C = A * B
 __global__ void matrixMultiply(float * A, float * B, float * C,
 			       int numARows, int numAColumns,
@@ -37,10 +40,22 @@ int main(int argc, char ** argv) {
     hostA = (float *) wbImport(wbArg_getInputFile(args, 0), &numARows, &numAColumns);
     hostB = (float *) wbImport(wbArg_getInputFile(args, 1), &numBRows, &numBColumns);
     //@@ Set numCRows and numCColumns
-    numCRows = 0;
-    numCColumns = 0;
+    numCRows = numARows;
+    numCColumns = numBColumns;
     //@@ Allocate the hostC matrix
+    hostC = (float *) malloc(MATRIX_SIZE(numCRows, numCColumns));
     wbTime_stop(Generic, "Importing data and creating memory on host");
+
+	// cpu computation
+	for (int i = 0; i < numCRows; i++) {
+		for (int j = 0; j < numCColumns; j++) {
+			float tmp = 0;
+			for (int n = 0; n < numAColumns; n++) {
+				tmp += hostA[i*numAColumns + n] * hostB[j + n*numBColumns];
+			}
+			hostC[i * numCColumns + j] = tmp;
+		}
+	}
 
     wbLog(TRACE, "The dimensions of A are ", numARows, " x ", numAColumns);
     wbLog(TRACE, "The dimensions of B are ", numBRows, " x ", numBColumns);
