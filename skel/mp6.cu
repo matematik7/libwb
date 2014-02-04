@@ -14,6 +14,9 @@
 
 //@@ INSERT CODE HERE
 
+__device__ __host__ float clamp(float x, float start, float end) {
+	return min(max(x, start), end);
+}
 
 int main(int argc, char* argv[]) {
     wbArg_t arg;
@@ -75,15 +78,35 @@ int main(int argc, char* argv[]) {
 
 
     wbTime_start(Compute, "Doing the computation on the GPU");
-    //@@ INSERT CODE HERE
+    
+    for (int i = 0; i < imageHeight; i++) {
+		for (int j = 0; j < imageWidth; j++) {
+			for (int k = 0; k < imageChannels; k++) {
+				float accum = 0;
+				for (int y = -Mask_radius; y <= Mask_radius; y++) {
+					for (int x = -Mask_radius; x <= Mask_radius; x++) {
+						int xOffset = j+x;
+						int yOffset = i+y;
+						if (xOffset >= 0 && xOffset < imageWidth && yOffset >= 0 && yOffset < imageHeight) {
+							float imagePixel = hostInputImageData[(yOffset * imageWidth + xOffset) * imageChannels + k];
+							float maskValue = hostMaskData[(y + Mask_radius)*Mask_width + x + Mask_radius];
+							accum += imagePixel * maskValue;
+						}
+					}
+				}
+				hostOutputImageData[(i * imageWidth + j) * imageChannels + k] = clamp(accum, 0, 1);
+			}
+		}
+	}
+    
     wbTime_stop(Compute, "Doing the computation on the GPU");
 
 
     wbTime_start(Copy, "Copying data from the GPU");
-    cudaMemcpy(hostOutputImageData,
-               deviceOutputImageData,
-               imageWidth * imageHeight * imageChannels * sizeof(float),
-               cudaMemcpyDeviceToHost);
+    //cudaMemcpy(hostOutputImageData,
+      //         deviceOutputImageData,
+        //       imageWidth * imageHeight * imageChannels * sizeof(float),
+          //     cudaMemcpyDeviceToHost);
     wbTime_stop(Copy, "Copying data from the GPU");
 
     wbTime_stop(GPU, "Doing GPU Computation (memory + compute)");
