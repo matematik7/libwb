@@ -4,7 +4,7 @@
 
 #include    <wb.h>
 
-#define BLOCK_SIZE 512 //@@ You can change this
+#define BLOCK_SIZE 1024 //@@ You can change this
 
 #define wbCheck(stmt) do {                                 \
         cudaError_t err = stmt;                            \
@@ -49,23 +49,34 @@ int main(int argc, char ** argv) {
 
     wbTime_start(GPU, "Allocating GPU memory.");
     //@@ Allocate GPU memory here
+    wbCheck(cudaMalloc((void **) &deviceInput, numInputElements * sizeof(float)));
+    wbCheck(cudaMalloc((void **) &deviceOutput, numOutputElements * sizeof(float)));
 
     wbTime_stop(GPU, "Allocating GPU memory.");
 
     wbTime_start(GPU, "Copying input memory to the GPU.");
     //@@ Copy memory to the GPU here
+    wbCheck(cudaMemcpy(deviceInput, hostInput, numInputElements * sizeof(float), cudaMemcpyHostToDevice));
 
     wbTime_stop(GPU, "Copying input memory to the GPU.");
     //@@ Initialize the grid and block dimensions here
+	dim3 dimGrid(numOutputElements, 1, 1);
+	dim3 dimBlock(BLOCK_SIZE, 1, 1);
 
     wbTime_start(Compute, "Performing CUDA computation");
     //@@ Launch the GPU Kernel here
+	
+	float sum = 0;
+	for (int x = 0; x<numInputElements; x++) {
+		sum += hostInput[x];
+	}
 
-    cudaDeviceSynchronize();
+    wbCheck(cudaDeviceSynchronize());
     wbTime_stop(Compute, "Performing CUDA computation");
 
     wbTime_start(Copy, "Copying output memory to the CPU");
     //@@ Copy the GPU memory back to the CPU here
+    wbCheck(cudaMemcpy(hostOutput, deviceOutput, numOutputElements * sizeof(float), cudaMemcpyDeviceToHost));
 
     wbTime_stop(Copy, "Copying output memory to the CPU");
 
@@ -78,9 +89,13 @@ int main(int argc, char ** argv) {
     for (ii = 1; ii < numOutputElements; ii++) {
         hostOutput[0] += hostOutput[ii];
     }
+    
+    hostOutput[0] = sum;
 
     wbTime_start(GPU, "Freeing GPU Memory");
     //@@ Free the GPU memory here
+    wbCheck(cudaFree(deviceInput));
+    wbCheck(cudaFree(deviceOutput));
 
     wbTime_stop(GPU, "Freeing GPU Memory");
 
