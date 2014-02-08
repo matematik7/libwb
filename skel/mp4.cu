@@ -15,10 +15,28 @@
     } while(0)
 
 __global__ void total(float * input, float * output, int len) {
+    __shared__ float partialSum[2*BLOCK_SIZE];
+    
+    const unsigned int t = threadIdx.x;
+    const unsigned int start = 2*blockIdx.x*blockDim.x;
+    
     //@@ Load a segment of the input vector into shared memory
+	partialSum[t] = input[start+t];
+	partialSum[blockDim.x + t] = input[start+blockDim.x + t];
+
     //@@ Traverse the reduction tree
+    for (unsigned int stride = blockDim.x; stride > 0; stride >>= 1) {
+		__syncthreads();
+		if (t < stride) {
+			partialSum[t] += partialSum[t+stride];
+		}
+	}
+	
     //@@ Write the computed sum of the block to the output vector at the 
     //@@ correct index
+    if (t == 0) {
+		output[blockIdx.x] = partialSum[0];
+	}
 }
 
 int main(int argc, char ** argv) {
@@ -66,10 +84,9 @@ int main(int argc, char ** argv) {
     wbTime_start(Compute, "Performing CUDA computation");
     //@@ Launch the GPU Kernel here
 	
-	float sum = 0;
-	for (int x = 0; x<numInputElements; x++) {
-		sum += hostInput[x];
-	}
+	total<<<dimGrid, dimBlock>>>(deviceInput, deviceOutput, numInputElements);
+	
+	wbCheck(cudaPeekAtLastError());
 
     wbCheck(cudaDeviceSynchronize());
     wbTime_stop(Compute, "Performing CUDA computation");
@@ -89,8 +106,6 @@ int main(int argc, char ** argv) {
     for (ii = 1; ii < numOutputElements; ii++) {
         hostOutput[0] += hostOutput[ii];
     }
-    
-    hostOutput[0] = sum;
 
     wbTime_start(GPU, "Freeing GPU Memory");
     //@@ Free the GPU memory here
