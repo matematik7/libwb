@@ -12,10 +12,57 @@
 #define Mask_width  5
 #define Mask_radius Mask_width/2
 
+static const int BLOCK_SIZE = 16;
+static const int IMAGE_TILE_SIZE = BLOCK_SIZE - 2*(Mask_radius);
+
 //@@ INSERT CODE HERE
 
 __device__ __host__ float clamp(float x, float start, float end) {
 	return min(max(x, start), end);
+}
+
+__global__ void imageConvolution(int imageHeight, int imageWidth, int imageChannels,
+	float * inputImageData, float * outputImageData, const float * __restrict__ maskData) {
+	
+	// j is column index
+	const int j = threadIdx.x + blockIdx.x*IMAGE_TILE_SIZE;
+	const int jLoad = j - Mask_radius;
+	// i is row index
+	const int i = threadIdx.y + blockIdx.y*IMAGE_TILE_SIZE;
+	const int iLoad = i - Mask_radius;
+	
+	// load data for 3 channels, 0 if not in image
+	__shared__ float inputTile[BLOCK_SIZE][BLOCK_SIZE][3];
+	if (jLoad >= 0 && jLoad < imageWidth 
+			&& iLoad >= 0 && iLoad < imageHeight) {
+		for (int k = 0; k < imageChannels; k++) {
+			inputTile[threadIdx.y][threadIdx.x][k] = 
+				inputImageData[(iLoad * imageWidth + jLoad)*imageChannels + k];
+		}
+	} else {
+		for (int k = 0; k < imageChannels; k++) {
+			inputTile[threadIdx.y][threadIdx.x][k] = 0;
+		}
+	}
+	
+	__syncthreads();
+	
+	// computation for 3 channels
+	if (j < imageWidth && i < imageHeight && threadIdx.x < IMAGE_TILE_SIZE && threadIdx.y < IMAGE_TILE_SIZE) {
+		for (int k = 0; k < imageChannels; k++) {
+			float accum = 0;
+			for (int y = 0; y < Mask_width; y++) {
+				for (int x = 0; x < Mask_width; x++) {
+					int xOffset = threadIdx.x+x;
+					int yOffset = threadIdx.y+y;
+					float imagePixel = inputTile[yOffset][xOffset][k];
+					float maskValue = maskData[y*Mask_width + x];
+					accum += imagePixel * maskValue;
+				}
+			}
+			outputImageData[(i * imageWidth + j) * imageChannels + k] = clamp(accum, 0, 1);
+		}
+	}
 }
 
 int main(int argc, char* argv[]) {
@@ -59,54 +106,43 @@ int main(int argc, char* argv[]) {
     wbTime_start(GPU, "Doing GPU Computation (memory + compute)");
 
     wbTime_start(GPU, "Doing GPU memory allocation");
-    cudaMalloc((void **) &deviceInputImageData, imageWidth * imageHeight * imageChannels * sizeof(float));
-    cudaMalloc((void **) &deviceOutputImageData, imageWidth * imageHeight * imageChannels * sizeof(float));
-    cudaMalloc((void **) &deviceMaskData, maskRows * maskColumns * sizeof(float));
+    wbCheck(cudaMalloc((void **) &deviceInputImageData, imageWidth * imageHeight * imageChannels * sizeof(float)));
+    wbCheck(cudaMalloc((void **) &deviceOutputImageData, imageWidth * imageHeight * imageChannels * sizeof(float)));
+    wbCheck(cudaMalloc((void **) &deviceMaskData, maskRows * maskColumns * sizeof(float)));
     wbTime_stop(GPU, "Doing GPU memory allocation");
 
 
     wbTime_start(Copy, "Copying data to the GPU");
-    cudaMemcpy(deviceInputImageData,
+    wbCheck(cudaMemcpy(deviceInputImageData,
                hostInputImageData,
                imageWidth * imageHeight * imageChannels * sizeof(float),
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(deviceMaskData,
+               cudaMemcpyHostToDevice));
+    wbCheck(cudaMemcpy(deviceMaskData,
                hostMaskData,
                maskRows * maskColumns * sizeof(float),
-               cudaMemcpyHostToDevice);
+               cudaMemcpyHostToDevice));
     wbTime_stop(Copy, "Copying data to the GPU");
 
+	// compute block and grid dimensions
+	dim3 dimGrid((imageWidth-1)/IMAGE_TILE_SIZE + 1, (imageHeight-1)/IMAGE_TILE_SIZE + 1, 1);
+	dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE, 1);
 
     wbTime_start(Compute, "Doing the computation on the GPU");
     
-    for (int i = 0; i < imageHeight; i++) {
-		for (int j = 0; j < imageWidth; j++) {
-			for (int k = 0; k < imageChannels; k++) {
-				float accum = 0;
-				for (int y = -Mask_radius; y <= Mask_radius; y++) {
-					for (int x = -Mask_radius; x <= Mask_radius; x++) {
-						int xOffset = j+x;
-						int yOffset = i+y;
-						if (xOffset >= 0 && xOffset < imageWidth && yOffset >= 0 && yOffset < imageHeight) {
-							float imagePixel = hostInputImageData[(yOffset * imageWidth + xOffset) * imageChannels + k];
-							float maskValue = hostMaskData[(y + Mask_radius)*Mask_width + x + Mask_radius];
-							accum += imagePixel * maskValue;
-						}
-					}
-				}
-				hostOutputImageData[(i * imageWidth + j) * imageChannels + k] = clamp(accum, 0, 1);
-			}
-		}
-	}
+    imageConvolution<<<dimGrid, dimBlock>>>(imageHeight, imageWidth, imageChannels, 
+		deviceInputImageData, deviceOutputImageData, deviceMaskData);
+    
+    wbCheck(cudaPeekAtLastError());
+    wbCheck(cudaDeviceSynchronize());
     
     wbTime_stop(Compute, "Doing the computation on the GPU");
 
 
     wbTime_start(Copy, "Copying data from the GPU");
-    //cudaMemcpy(hostOutputImageData,
-      //         deviceOutputImageData,
-        //       imageWidth * imageHeight * imageChannels * sizeof(float),
-          //     cudaMemcpyDeviceToHost);
+    wbCheck(cudaMemcpy(hostOutputImageData,
+               deviceOutputImageData,
+               imageWidth * imageHeight * imageChannels * sizeof(float),
+               cudaMemcpyDeviceToHost));
     wbTime_stop(Copy, "Copying data from the GPU");
 
     wbTime_stop(GPU, "Doing GPU Computation (memory + compute)");
