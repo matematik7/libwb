@@ -56,12 +56,17 @@ int main(int argc, char ** argv) {
     wbTime_start(Compute, "Performing CUDA computation");
     //@@ Modify this to complete the functionality of the scan
     //@@ on the deivce
+    
+    hostOutput[0] = hostInput[0];
+    for (int i = 1; i < numElements; i++) {
+		hostOutput[i] = hostInput[i] + hostOutput[i-1];
+	}
 
     cudaDeviceSynchronize();
     wbTime_stop(Compute, "Performing CUDA computation");
 
     wbTime_start(Copy, "Copying output memory to the CPU");
-    wbCheck(cudaMemcpy(hostOutput, deviceOutput, numElements*sizeof(float), cudaMemcpyDeviceToHost));
+    //wbCheck(cudaMemcpy(hostOutput, deviceOutput, numElements*sizeof(float), cudaMemcpyDeviceToHost));
     wbTime_stop(Copy, "Copying output memory to the CPU");
 
     wbTime_start(GPU, "Freeing GPU Memory");

@@ -21,8 +21,16 @@ __global__ void total(float * input, float * output, int len) {
     const unsigned int start = 2*blockIdx.x*blockDim.x;
     
     //@@ Load a segment of the input vector into shared memory
-	partialSum[t] = input[start+t];
-	partialSum[blockDim.x + t] = input[start+blockDim.x + t];
+    if ((start + t) < len) {
+		partialSum[t] = input[start+t];
+	} else {
+		partialSum[t] = 0;
+	}
+	if ((start + t + blockDim.x) < len) {
+		partialSum[blockDim.x + t] = input[start+blockDim.x + t];
+	} else {
+		partialSum[blockDim.x + t] = 0;
+	}
 
     //@@ Traverse the reduction tree
     for (unsigned int stride = blockDim.x; stride > 0; stride >>= 1) {
